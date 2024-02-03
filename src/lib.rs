@@ -78,9 +78,14 @@ pub fn build(
         let target = include_str!("armv7a-vexos-eabi.json");
         fs::create_dir_all(target_path.parent().unwrap()).unwrap();
         fs::write(&target_path, target).unwrap();
-        build_cmd.arg("--target");
-        build_cmd.arg(&target_path);
+        build_cmd
+            .arg("--target")
+            .arg(&target_path);
 
+        build_cmd
+            .arg("--config")
+            .arg(format!("target.armv7a-vexos-eabi.linker='{}'", linker_path()));
+ 
         build_cmd
             .arg("-Zbuild-std=core,alloc,compiler_builtins")
             .stdout(Stdio::piped());
@@ -100,23 +105,49 @@ pub fn build(
 }
 
 #[cfg(target_os = "windows")]
-fn find_objcopy_path_windows() -> Option<String> {
-    let arm_install_path =
+fn find_toolchian_path_windows() -> Option<PathBuf> {
+    let config_dir = dirs::config_dir()?;
+
+    let toolchain_install_path = 
         PathBuf::from("C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi");
-    let mut versions = fs::read_dir(arm_install_path).ok()?;
-    let install = versions.next()?.ok()?.path();
-    let path = install.join("bin").join("arm-none-eabi-objcopy.exe");
-    Some(path.to_string_lossy().to_string())
+    let pros_vscode_toolchain_bin = config_dir.join("Code\\User\\globalStorage\\sigbots.pros\\install\\pros-toolchain-windows\\usr\\bin");
+    let pros_vscode_insiders_toolchain_bin = config_dir.join("Code - Insiders\\User\\globalStorage\\sigbots.pros\\install\\pros-toolchain-windows\\usr\\bin");
+
+    if toolchain_install_path.exists() {
+        let mut versions = fs::read_dir(toolchain_install_path).ok()?;
+
+        Some(versions.next()?.ok()?.path().join("bin"))
+    } else if pros_vscode_toolchain_bin.exists() {
+        Some(pros_vscode_toolchain_bin)
+    } else if pros_vscode_insiders_toolchain_bin.exists() {
+        Some(pros_vscode_insiders_toolchain_bin)
+    } else {
+        None
+    }
 }
 
 fn objcopy_path() -> String {
     #[cfg(target_os = "windows")]
-    let objcopy_path = find_objcopy_path_windows();
+    if let Some(toolchain_path) = find_toolchian_path_windows() {
+        toolchain_path.join("arm-none-eabi-objcopy.exe").to_string_lossy().to_string()
+    } else {
+        "arm-none-eabi-objcopy".to_owned()
+    }
 
     #[cfg(not(target_os = "windows"))]
-    let objcopy_path = None;
+    "arm-none-eabi-objcopy".to_owned()
+}
 
-    objcopy_path.unwrap_or_else(|| "arm-none-eabi-objcopy".to_owned())
+fn linker_path() -> String {
+    #[cfg(target_os = "windows")]
+    if let Some(toolchain_path) = find_toolchian_path_windows() {
+        toolchain_path.join("arm-none-eabi-gcc.exe").to_string_lossy().to_string()
+    } else {
+        "arm-none-eabi-gcc".to_owned()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    "arm-none-eabi-gcc".to_owned()
 }
 
 pub fn strip_binary(bin: Utf8PathBuf) {
